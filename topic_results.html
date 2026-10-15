@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f1e8">
+  <title>唐詩主題圖譜 · LDA</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f5f1e8;
+      --card: #fffdf8;
+      --ink: #202d2a;
+      --muted: #68736c;
+      --line: #e8e2d6;
+      --green: #34584c;
+      --green-soft: #e9f0e9;
+      --red: #b65e43;
+      --gold: #c49a52;
+      --shadow: 0 10px 32px rgb(48 55 44 / 6%);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(ellipse at 90% 0%, rgb(196 154 82 / 12%), transparent 34rem),
+        var(--paper);
+      color: var(--ink);
+      font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      line-height: 1.6;
+    }
+
+    button, input { font: inherit; }
+
+    .page {
+      width: min(1160px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 58px 0 48px;
+    }
+
+    .masthead {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      padding-bottom: 34px;
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--red);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: "Noto Serif TC", "Songti TC", "SimSun", serif;
+      font-size: clamp(34px, 6vw, 60px);
+      font-weight: 600;
+      letter-spacing: .08em;
+      line-height: 1.15;
+    }
+
+    .subtitle {
+      max-width: 600px;
+      margin: 16px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .seal {
+      display: grid;
+      width: 64px;
+      height: 64px;
+      flex: 0 0 auto;
+      place-items: center;
+      border: 1px solid rgb(182 94 67 / 45%);
+      border-radius: 50%;
+      color: var(--red);
+      font-family: "Noto Serif TC", "Songti TC", serif;
+      font-size: 25px;
+      line-height: 1;
+      transform: rotate(8deg);
+    }
+
+    .overview {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      margin-bottom: 34px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgb(255 253 248 / 72%);
+    }
+
+    .stat {
+      padding: 18px 22px;
+    }
+
+    .stat + .stat { border-left: 1px solid var(--line); }
+    .stat-label { color: var(--muted); font-size: 12px; letter-spacing: .08em; }
+    .stat-value { margin-top: 3px; font-size: 20px; font-weight: 700; }
+    .stat-value small { color: var(--muted); font-size: 12px; font-weight: 500; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .tabs {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #ebe6db;
+    }
+
+    .tab {
+      min-width: 104px;
+      padding: 9px 16px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 700;
+      transition: background .18s ease, color .18s ease, box-shadow .18s ease;
+    }
+
+    .tab[aria-pressed="true"] {
+      background: var(--card);
+      color: var(--green);
+      box-shadow: 0 2px 8px rgb(48 55 44 / 9%);
+    }
+
+    .search {
+      width: min(300px, 44vw);
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      outline: none;
+      background: var(--card);
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    .search:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgb(52 88 76 / 10%); }
+
+    .section-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 0 14px;
+    }
+
+    .section-heading h2 {
+      margin: 0;
+      font-family: "Noto Serif TC", "Songti TC", serif;
+      font-size: 21px;
+      font-weight: 600;
+    }
+
+    .result-count { color: var(--muted); font-size: 13px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .topic-card {
+      position: relative;
+      min-width: 0;
+      padding: 22px 22px 20px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      animation: rise .35s both;
+    }
+
+    .topic-card::after {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 4px;
+      height: 100%;
+      background: linear-gradient(var(--gold), var(--green));
+      content: "";
+      opacity: .72;
+    }
+
+    .topic-topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .topic-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .topic-number {
+      color: var(--green);
+      font-family: "Noto Serif TC", "Songti TC", serif;
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .characters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin: 18px 0 21px;
+    }
+
+    .character {
+      display: grid;
+      width: 34px;
+      height: 36px;
+      place-items: center;
+      border: 1px solid #e7e9df;
+      border-radius: 8px;
+      background: var(--green-soft);
+      color: var(--green);
+      font-family: "Noto Serif TC", "Songti TC", serif;
+      font-size: 17px;
+      font-weight: 600;
+    }
+
+    .poems-label {
+      margin-bottom: 9px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .12em;
+    }
+
+    .poem {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 0;
+      border-top: 1px solid #f0ece4;
+    }
+
+    .poem-title {
+      overflow-wrap: anywhere;
+      font-family: "Noto Serif TC", "Songti TC", "SimSun", serif;
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .poem-author { margin-top: 2px; color: var(--muted); font-size: 12px; }
+    .affinity { min-width: 62px; text-align: right; }
+    .affinity-value { color: var(--green); font-size: 12px; font-weight: 700; }
+    .meter { height: 3px; margin-top: 5px; overflow: hidden; border-radius: 4px; background: #e8e5da; }
+    .meter span { display: block; height: 100%; border-radius: inherit; background: var(--gold); }
+
+    .empty {
+      grid-column: 1 / -1;
+      padding: 48px 20px;
+      border: 1px dashed #d8d0c2;
+      border-radius: 13px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .note {
+      margin: 27px 0 0;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(7px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 700px) {
+      .page { width: min(100% - 28px, 560px); padding-top: 35px; }
+      .seal { width: 52px; height: 52px; font-size: 21px; }
+      .overview { grid-template-columns: 1fr; }
+      .stat { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 16px; }
+      .stat + .stat { border-top: 1px solid var(--line); border-left: 0; }
+      .stat-value { margin: 0; font-size: 17px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 440px) {
+      .toolbar { align-items: stretch; flex-direction: column; }
+      .tabs { display: grid; grid-template-columns: 1fr 1fr; }
+      .tab { min-width: 0; }
+      .search { width: 100%; }
+      .topic-card { padding: 18px; }
+      .characters { gap: 5px; }
+      .character { width: 31px; height: 33px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">Tang Poetry · Topic Modeling</p>
+        <h1>唐詩主題圖譜</h1>
+        <p class="subtitle">以字為粒度，從四萬餘首唐詩中觀察意象與語詞的聚合。切換主題數，看看詩意如何呈現不同的層次。</p>
+      </div>
+      <div class="seal" aria-hidden="true">詩<br>境</div>
+    </header>
+
+    <section class="overview" aria-label="模型摘要">
+      <div class="stat">
+        <span class="stat-label">語料規模</span>
+        <span class="stat-value">45,726 <small>首詩</small></span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">分析方式</span>
+        <span class="stat-value">逐字 LDA <small>去標點與空白</small></span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">代表詩</span>
+        <span class="stat-value">每題 2 <small>首典型作品</small></span>
+      </div>
+    </section>
+
+    <section aria-labelledby="topics-heading">
+      <div class="toolbar">
+        <div class="tabs" role="group" aria-label="選擇主題數">
+          <button class="tab" type="button" data-model="10" aria-pressed="true">10 個主題</button>
+          <button class="tab" type="button" data-model="20" aria-pressed="false">20 個主題</button>
+        </div>
+        <input
+          class="search"
+          id="search"
+          type="search"
+          placeholder="搜尋字詞、詩名或作者…"
+          aria-label="搜尋主題或代表詩"
+        >
+      </div>
+      <div class="section-heading">
+        <h2 id="topics-heading">主題一覽</h2>
+        <span class="result-count" id="result-count" aria-live="polite"></span>
+      </div>
+      <div class="grid" id="topics"></div>
+    </section>
+
+    <p class="note">代表詩依文件在該主題中的機率排序（θ）；主題為無監督模型根據字詞共現推得，並非人工分類。所有資料均嵌入此頁，可離線開啟。</p>
+  </main>
+
+  <script>
+    const topicData = [{"n":10,"topic":1,"characters":["江","水","山","风","月","秋","人","云","归","日"],"poems":[{"title":"上巳日越中与鲍侍郎泛舟耶溪","author":"刘长卿","probability":0.9629340292602406},{"title":"岳阳楼","author":"刘长卿","probability":0.9629340292602406}]},{"n":10,"topic":2,"characters":["兮","天","德","神","圣","之","文","以","有","明"],"poems":[{"title":"郊庙歌辞武后大享拜洛乐章咸和","author":"作者未載","probability":0.9450761803940906},{"title":"仪坤庙乐章二首 二","author":"薛稷","probability":0.9331858920499051}]},{"n":10,"topic":3,"characters":["天","不","龙","一","如","金","水","海","云","神"],"poems":[{"title":"恶神行雨","author":"姚合","probability":0.9424592400784866},{"title":"晓鸡","author":"秦系","probability":0.9060025053101439}]},{"n":10,"topic":4,"characters":["马","城","山","将","汉","军","行","兵","人","国"],"poems":[{"title":"送王相公之幽州","author":"皇甫冉","probability":0.9462676145175473},{"title":"送魏中丞还河北","author":"皇甫冉","probability":0.9274849543070675}]},{"n":10,"topic":5,"characters":["金","上","玉","天","宫","人","日","马","花","中"],"poems":[{"title":"杂曲歌辞渭城少年行","author":"崔颢","probability":0.8995032743771475},{"title":"圣明乐","author":"张仲素","probability":0.8953238838627434}]},{"n":10,"topic":6,"characters":["不","人","无","何","为","有","我","君","一","如"],"poems":[{"title":"学阮公体三首 一","author":"刘禹锡","probability":0.946024447221634},{"title":"乐府杂曲鼓吹曲辞将进酒","author":"元稹","probability":0.9211346609213211}]},{"n":10,"topic":7,"characters":["花","春","风","红","不","香","玉","金","月","人"],"poems":[{"title":"新成安乐宫","author":"陈子良","probability":0.9449465617841364},{"title":"女冠子","author":"欧阳炯","probability":0.9368153070252028}]},{"n":10,"topic":8,"characters":["清","云","风","光","高","山","日","林","气","幽"],"poems":[{"title":"九月十八赐百僚追赏因书所怀","author":"李适","probability":0.9308070955039967},{"title":"奉和张舍人阁老阁中直夜，思闻雅琴，因以书事，通简僚友","author":"权德舆","probability":0.9148279910703623}]},{"n":10,"topic":9,"characters":["不","人","年","酒","无","春","时","来","日","一"],"poems":[{"title":"酬孙洛阳","author":"张籍","probability":0.9482919596755703},{"title":"寄王六侍御","author":"张籍","probability":0.9282742621111314}]},{"n":10,"topic":10,"characters":["山","云","石","松","人","无","来","不","闲","深"],"poems":[{"title":"吊草堂禅师","author":"李洞","probability":0.9475445608003245},{"title":"宿石窟寺","author":"喻凫","probability":0.9463126841446252}]},{"n":20,"topic":1,"characters":["花","春","风","柳","人","日","来","不","年","枝"],"poems":[{"title":"杏园花落时招钱员外同醉","author":"白居易","probability":0.7965884965055233},{"title":"春望词四首 一","author":"薛涛","probability":0.7715337239273183}]},{"n":20,"topic":2,"characters":["人","不","无","是","年","来","时","知","事","何"],"poems":[{"title":"留别阎士和","author":"皎然","probability":0.772637067712283},{"title":"山居送僧","author":"李涉","probability":0.7671554112257747}]},{"n":20,"topic":3,"characters":["之","不","兮","有","其","为","以","天","我","如"],"poems":[{"title":"补乐歌十首咸池","author":"元结","probability":0.8075666910374385},{"title":"空洞歌","author":"张志和","probability":0.802760283555172}]},{"n":20,"topic":4,"characters":["文","才","书","公","贤","名","清","高","□","诗"],"poems":[{"title":"暮春于山谷寺上方遇恩命加官赐服酬皇甫侍御见贺之作","author":"独孤及","probability":0.7150181217638557},{"title":"箫","author":"李峤","probability":0.7150181217638557}]},{"n":20,"topic":5,"characters":["天","神","灵","龙","帝","云","圣","万","德","皇"],"poems":[{"title":"郊庙歌辞后唐宗庙乐舞辞永平舞","author":"作者未載","probability":0.8419693666455392},{"title":"郊庙歌辞昭德皇后庙乐章坤元","author":"作者未載","probability":0.8419693666455392}]},{"n":20,"topic":6,"characters":["玉","金","歌","上","宫","人","花","马","来","君"],"poems":[{"title":"霓裳词十首 七","author":"王建","probability":0.8235903283136996},{"title":"霓裳词十首 六","author":"王建","probability":0.7630518284052735}]},{"n":20,"topic":7,"characters":["山","悠","日","人","云","望","归","东","寂","水"],"poems":[{"title":"寄裴处士","author":"韦应物","probability":0.7160558959151978},{"title":"归汝坟山庄留别卢象","author":"祖咏","probability":0.6949689436977559}]},{"n":20,"topic":8,"characters":["夜","月","秋","寒","风","声","雨","明","落","清"],"poems":[{"title":"禁中闻蛩","author":"白居易","probability":0.7705953083572297},{"title":"燕子楼三首 一","author":"白居易","probability":0.765608072064837}]},{"n":20,"topic":9,"characters":["将","马","军","兵","天","剑","汉","出","战","旌"],"poems":[{"title":"从军行五首 一","author":"皎然","probability":0.8034799904554077},{"title":"献封大夫破播仙凯歌六首 三","author":"岑参","probability":0.7623670809307056}]},{"n":20,"topic":10,"characters":["山","城","风","西","马","北","天","河","路","人"],"poems":[{"title":"调笑令","author":"韦应物","probability":0.8294918406286445},{"title":"塞下曲","author":"杨达","probability":0.8052406693770005}]},{"n":20,"topic":11,"characters":["江","水","云","山","风","舟","月","波","远","秋"],"poems":[{"title":"逢郴州使，因寄郑协律","author":"刘长卿","probability":0.8066163461186519},{"title":"初次巴陵","author":"杨凝","probability":0.7969119081503552}]},{"n":20,"topic":12,"characters":["清","心","风","幽","深","林","云","飞","高","自"],"poems":[{"title":"巽公院五咏苦竹桥","author":"柳宗元","probability":0.7129150150146886},{"title":"心怀霜","author":"姚合","probability":0.6801774074097453}]},{"n":20,"topic":13,"characters":["君","人","为","年","今","相","书","诗","不","家"],"poems":[{"title":"偶题","author":"杜牧","probability":0.7657355764063151},{"title":"喜王六同宿","author":"张籍","probability":0.7354663264521021}]},{"n":20,"topic":14,"characters":["一","不","人","三","十","天","中","千","年","如"],"poems":[{"title":"戏答思黯","author":"白居易","probability":0.7640955537815128},{"title":"答章孝标","author":"李绅","probability":0.7338263038272997}]},{"n":20,"topic":15,"characters":["水","闲","酒","竹","鱼","山","钓","客","野","书"],"poems":[{"title":"寿阳罢郡日，有诗十首，与追怀不殊，今编于后兼纪瑞物忆东湖","author":"李绅","probability":0.8313854440140616},{"title":"晓鸡","author":"秦系","probability":0.8161494680842336}]},{"n":20,"topic":16,"characters":["光","玉","日","天","云","开","色","金","烟","宫"],"poems":[{"title":"奉和过慈恩寺应制","author":"许敬宗","probability":0.8268358035964621},{"title":"奉和九月九日登兹恩寺浮图应制","author":"李峤","probability":0.8268358035964621}]},{"n":20,"topic":17,"characters":["不","无","何","君","我","人","心","有","为","此"],"poems":[{"title":"弃妇","author":"曹邺","probability":0.7120544806439096},{"title":"喻时","author":"王建","probability":0.6971212160258634}]},{"n":20,"topic":18,"characters":["红","花","香","玉","金","春","翠","罗","风","轻"],"poems":[{"title":"应天长","author":"顾夐","probability":0.8551845374388701},{"title":"归国遥","author":"温庭筠","probability":0.8481343369829715}]},{"n":20,"topic":19,"characters":["山","云","石","松","峰","泉","僧","林","溪","岩"],"poems":[{"title":"送琇上人","author":"郑巢","probability":0.7388448885962337},{"title":"游竹林寺","author":"方干","probability":0.7388448885962337}]},{"n":20,"topic":20,"characters":["不","无","一","得","头","人","如","生","为","有"],"poems":[{"title":"山头鹿","author":"张籍","probability":0.7901082295424235},{"title":"曹著与客谜","author":"作者未載","probability":0.765060100703084}]}];
+    const grid = document.querySelector("#topics");
+    const searchInput = document.querySelector("#search");
+    const resultCount = document.querySelector("#result-count");
+    const modelButtons = [...document.querySelectorAll("[data-model]")];
+    let selectedModel = 10;
+
+    function makeElement(tag, className, text) {
+      const element = document.createElement(tag);
+      if (className) element.className = className;
+      if (text !== undefined) element.textContent = text;
+      return element;
+    }
+
+    function render() {
+      const query = searchInput.value.trim().toLocaleLowerCase();
+      const topics = topicData.filter((item) => {
+        const content = [
+          ...item.characters,
+          ...item.poems.flatMap((poem) => [poem.title, poem.author]),
+        ].join(" ").toLocaleLowerCase();
+        return item.n === selectedModel && content.includes(query);
+      });
+
+      grid.replaceChildren();
+      resultCount.textContent = `顯示 ${topics.length} / ${selectedModel} 個主題`;
+
+      if (!topics.length) {
+        grid.append(makeElement("div", "empty", "沒有符合搜尋條件的主題。"));
+        return;
+      }
+
+      for (const item of topics) {
+        const card = makeElement("article", "topic-card");
+        card.style.animationDelay = `${Math.min(item.topic * 22, 300)}ms`;
+
+        const topline = makeElement("div", "topic-topline");
+        topline.append(
+          makeElement("span", "topic-label", `LDA · ${item.n} topics`),
+          makeElement("span", "topic-number", String(item.topic).padStart(2, "0")),
+        );
+        card.append(topline);
+
+        const characters = makeElement("div", "characters");
+        characters.setAttribute("aria-label", "前十個代表字");
+        for (const character of item.characters) {
+          characters.append(makeElement("span", "character", character));
+        }
+        card.append(characters, makeElement("div", "poems-label", "代表詩作"));
+
+        for (const poem of item.poems) {
+          const row = makeElement("div", "poem");
+          const info = makeElement("div", "poem-info");
+          info.append(
+            makeElement("div", "poem-title", poem.title),
+            makeElement("div", "poem-author", poem.author),
+          );
+
+          const affinity = makeElement("div", "affinity");
+          affinity.append(makeElement("div", "affinity-value", `θ ${(poem.probability * 100).toFixed(1)}%`));
+          const meter = makeElement("div", "meter");
+          const fill = makeElement("span");
+          fill.style.width = `${Math.max(0, Math.min(poem.probability * 100, 100))}%`;
+          meter.append(fill);
+          affinity.append(meter);
+
+          row.append(info, affinity);
+          card.append(row);
+        }
+        grid.append(card);
+      }
+    }
+
+    for (const button of modelButtons) {
+      button.addEventListener("click", () => {
+        selectedModel = Number(button.dataset.model);
+        for (const tab of modelButtons) {
+          tab.setAttribute("aria-pressed", String(tab === button));
+        }
+        render();
+      });
+    }
+
+    searchInput.addEventListener("input", render);
+    render();
+  </script>
+</body>
+</html>
